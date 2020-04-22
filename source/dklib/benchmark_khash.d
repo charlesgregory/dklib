@@ -1,8 +1,4 @@
-/+dub.sdl:
-dependency "emsi_containers" version="~>0.7"
-dependency "dklib" path="../.."
-+/
-import khash;
+import dklib.khash;
 import containers;
 
 import std.datetime.stopwatch : StopWatch, AutoStart;
@@ -17,9 +13,13 @@ int main()
 
     enum NUMBER_OF_ITEMS = 500_000;
 
-    void testContainerInsert(alias Container, string ContainerName)()
+    void testContainerInsert(alias Container, string ContainerName,bool useKalloc = false)()
     {
-        auto c = Container!(string, int)();
+        static if(useKalloc){
+            auto c = khash!(string, int,true,ALLOCATORS.KALLOC)();
+        }else{
+            auto c = Container!(string, int)();
+        }
 
         StopWatch sw = StopWatch(AutoStart.yes);
         foreach (i; 0 .. NUMBER_OF_ITEMS)
@@ -30,11 +30,16 @@ int main()
             sw.peek.total!"msecs", " milliseconds.");
     }
 
-    void testContainerLookup(alias Container, string ContainerName)()
+    void testContainerLookup(alias Container, string ContainerName,bool useKalloc = false)()
     {
         import std.random : uniform;
 
-        auto c = Container!(uint, string)();
+        static if(useKalloc){
+            auto c = khash!(uint, string,true,ALLOCATORS.KALLOC)();
+        }else{
+            auto c = Container!(uint, string)();
+        }
+
         // untimed insert
         foreach (i; 0 .. NUMBER_OF_ITEMS)
             c[i] = randomUUID().toString;
@@ -61,9 +66,11 @@ int main()
 
     testContainerInsert!(HashMap, "HashMap");
     testContainerInsert!(khash, "khash");
+    testContainerInsert!(khash, "khash (kalloc)",true);
 
     testContainerLookup!(HashMap, "HashMap");
     testContainerLookup!(khash, "khash");
+    testContainerLookup!(khash, "khash (kalloc)",true);
 
     return 0;
 }

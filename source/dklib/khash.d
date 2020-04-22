@@ -29,6 +29,7 @@ module dklib.khash;
 import std.traits : isNumeric, isSomeString, isSigned;
 import core.stdc.stdint;    // uint32_t, etc.
 import core.memory;         // GC
+import dklib.kalloc;
 
 /*!
   @header
@@ -107,19 +108,37 @@ pragma(inline, true)
     }
 }
 
-alias kcalloc = calloc;
-
-alias kmalloc = malloc;
-
-alias krealloc = realloc;
-
-alias kfree = free;
+enum ALLOCATORS {
+    GC,
+    KALLOC,
+    MALLOC
+}
 
 private const double __ac_HASH_UPPER = 0.77;
 
+enum KALLOC = kmem_t();
+
 /// Straight port of khash's generic C approach
-template khash(KT, VT, bool kh_is_map = true, bool useGC = true)
+template khash(KT, VT, bool kh_is_map = true, ALLOCATORS allocator = ALLOCATORS.GC)
 {
+    static if(allocator == ALLOCATORS.KALLOC){
+        @nogc:
+        auto kcalloc = &(KALLOC.kcalloc);
+
+        auto kmalloc = &(KALLOC.kmalloc);
+
+        auto krealloc = &(KALLOC.krealloc);
+
+        auto kfree = &(KALLOC.kfree);
+    }else{
+        alias kcalloc = calloc;
+
+        alias kmalloc = malloc;
+
+        alias krealloc = realloc;
+
+        alias kfree = free;
+    }
     static assert(!isSigned!KT, "Numeric key types must be unsigned -- try uint instead of int, etc.");
 
     alias __hash_func = kh_hash!KT.kh_hash_func;
@@ -137,7 +156,7 @@ template khash(KT, VT, bool kh_is_map = true, bool useGC = true)
         ~this()
         {
             //kh_destroy(&this); // the free(h) at the end of kh_destroy will SIGSEGV
-            static if (useGC) {
+            static if (allocator == ALLOCATORS.GC) {
                 GC.removeRange(this.keys);
                 static if (kh_is_map)
                     GC.removeRange(this.vals);
@@ -294,7 +313,7 @@ template khash(KT, VT, bool kh_is_map = true, bool useGC = true)
 				if (h.n_buckets < new_n_buckets) {	/* expand */
 					KT *new_keys = cast(KT*)krealloc(cast(void *)h.keys, new_n_buckets * KT.sizeof);
 					if (!new_keys) { kfree(new_flags); return -1; }
-                    static if (useGC) {
+                    static if (allocator == ALLOCATORS.GC) {
                         GC.addRange(new_keys, new_n_buckets * KT.sizeof);
                         if (new_keys != h.keys) GC.removeRange(h.keys);
                     }
@@ -302,7 +321,7 @@ template khash(KT, VT, bool kh_is_map = true, bool useGC = true)
 					static if (kh_is_map) {
 						VT *new_vals = cast(VT*)krealloc(cast(void *)h.vals, new_n_buckets * VT.sizeof);
 						if (!new_vals) { kfree(new_flags); return -1; }
-                        static if (useGC) {
+                        static if (allocator == ALLOCATORS.GC) {
                             GC.addRange(new_vals, new_n_buckets * VT.sizeof);
                             if (new_vals != h.vals) GC.removeRange(h.vals);
                         }
@@ -341,7 +360,7 @@ template khash(KT, VT, bool kh_is_map = true, bool useGC = true)
 			if (h.n_buckets > new_n_buckets) { /* shrink the hash table */
 				h.keys = cast(KT*)krealloc(cast(void *)h.keys, new_n_buckets * KT.sizeof);
 				static if (kh_is_map) h.vals = cast(VT*)krealloc(cast(void *)h.vals, new_n_buckets * VT.sizeof);
-                static if (useGC) {
+                static if (allocator == ALLOCATORS.GC) {
                     GC.disable();
                     GC.removeRange(h.keys);
                     GC.addRange(h.keys, new_n_buckets * KT.sizeof);
